@@ -45,7 +45,7 @@ async function readToken() {
 
 async function loadProxies() {
     try {
-        const data = await fs.readFile(DATA_PATHS.PROXY_FILE, 'utf8');
+        const data = await fs.readFile(CONFIG_PATHS.PROXY_FILE, 'utf8');
         return data.split('\n').filter(proxy => proxy.trim() !== '');
     } catch (error) {
         logger('Error reading proxy file:', "error", error);

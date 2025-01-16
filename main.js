@@ -5,13 +5,9 @@ const { runNodeTests, fetchBaseUrl } = require("./services/nodes");
 const { askQuestion } = require("./utils/userInput");
 const { banner } = require("./utils/banner");
 const { logger } = require("./utils/logger");
-const { ensureDirectories } = require('./config');
+const { ensureDirectories, TIME_INTERVALS } = require('./config');
+const { saveRunTimes, shouldRun } = require('./utils/runtime');
 
-// Time intervals
-const BASE_URL_REFRESH_INTERVAL = 60 * 60 * 1000; // 60 minutes
-const HEARTBEAT_INTERVAL = 6 * 60 * 60 * 1000;    // 6 hours  
-const NODE_TEST_INTERVAL = 30 * 60 * 1000;        // 30 minutes
-const REWARDS_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
 let baseUrl = 'https://api.pipecdn.app'
 
 // Ensure base URL is initialized
@@ -46,12 +42,12 @@ async function showMenu() {
             baseUrl = await ensureBaseUrl();
             logger("Running All Accounts using Proxy...");
             await sendHeartbeat(baseUrl);
-            setInterval(() => sendHeartbeat(baseUrl), HEARTBEAT_INTERVAL);
+            setInterval(() => sendHeartbeat(baseUrl), TIME_INTERVALS.HEARTBEAT_INTERVAL);
             await runNodeTests(baseUrl);
-            setInterval(() => runNodeTests(baseUrl), NODE_TEST_INTERVAL);
+            setInterval(() => runNodeTests(baseUrl), TIME_INTERVALS.NODE_TEST_INTERVAL);
             // Not working
             // await checkForRewards(baseUrl);
-            // setInterval(() => checkForRewards(baseUrl), REWARDS_CHECK_INTERVAL);
+            // setInterval(() => checkForRewards(baseUrl), TIME_INTERVALS.REWARDS_CHECK_INTERVAL);
             logger(
                 "Heartbeat: 6h, Node tests: 30m, Rewards check: 24h",
                 "debug"
@@ -71,7 +67,7 @@ async function showMenu() {
     setInterval(async () => {
         baseUrl = await fetchBaseUrl();
         logger('Base URL refreshed:', baseUrl);
-    }, BASE_URL_REFRESH_INTERVAL);
+    }, TIME_INTERVALS.BASE_URL_REFRESH_INTERVAL);
 
     await showMenu();
 })();

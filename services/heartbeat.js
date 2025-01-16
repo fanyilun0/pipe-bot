@@ -4,7 +4,7 @@ const { readToken, loadProxies, headers } = require("../utils/file");
 const { logger } = require("../utils/logger");
 const { withTokenRefresh } = require("../utils/token");
 const fs = require('fs').promises;
-const { DATA_PATHS } = require('../config');
+const { DATA_PATHS, HEARTBEAT_INTERVAL, NODE_TEST_INTERVAL } = require('../config');
 
 // 新增：保存points到本地文件
 async function savePoints(username, points, timestamp = Date.now()) {
@@ -71,6 +71,71 @@ async function fetchPoints(token, username, agent, API_BASE) {
     }
 }
 
+// 保存运行时间记录
+async function saveRunTimes(username, type, timestamp = Date.now()) {
+    try {
+        let timeData = [];
+        try {
+            const fileData = await fs.readFile(DATA_PATHS.RUNTIME_FILE, 'utf8');
+            timeData = JSON.parse(fileData);
+        } catch (error) {
+            timeData = [];
+        }
+
+        const existingIndex = timeData.findIndex(p => p.username === username);
+        const nextRun = type === 'heartbeat' ? 
+            timestamp + HEARTBEAT_INTERVAL :
+            timestamp + NODE_TEST_INTERVAL;
+
+        const timeRecord = existingIndex >= 0 ? timeData[existingIndex] : {
+            username,
+            lastHeartbeat: null,
+            nextHeartbeat: null,
+            lastNodeTest: null,
+            nextNodeTest: null
+        };
+
+        if (type === 'heartbeat') {
+            timeRecord.lastHeartbeat = timestamp;
+            timeRecord.nextHeartbeat = nextRun;
+        } else {
+            timeRecord.lastNodeTest = timestamp;
+            timeRecord.nextNodeTest = nextRun;
+        }
+
+        if (existingIndex >= 0) {
+            timeData[existingIndex] = timeRecord;
+        } else {
+            timeData.push(timeRecord);
+        }
+
+        await fs.writeFile(DATA_PATHS.RUNTIME_FILE, JSON.stringify(timeData, null, 2));
+        logger(`Runtime saved for ${username} - ${type}`, 'info');
+    } catch (error) {
+        logger(`Error saving runtime for ${username}: ${error.message}`, 'error');
+    }
+}
+
+// 检查是否需要运行
+async function shouldRun(username, type) {
+    try {
+        const fileData = await fs.readFile(DATA_PATHS.RUNTIME_FILE, 'utf8');
+        const timeData = JSON.parse(fileData);
+        
+        const record = timeData.find(p => p.username === username);
+        if (!record) return true;
+
+        const now = Date.now();
+        if (type === 'heartbeat') {
+            return !record.nextHeartbeat || now >= record.nextHeartbeat;
+        } else {
+            return !record.nextNodeTest || now >= record.nextNodeTest;
+        }
+    } catch (error) {
+        return true; // 如果文件不存在或出错,默认允许运行
+    }
+}
+
 // Function to send heartbeat
 async function sendHeartbeat(API_BASE) {
     const proxies = await loadProxies();
@@ -87,6 +152,13 @@ async function sendHeartbeat(API_BASE) {
 
     for (let i = 0; i < tokens.length; i++) {
         const { token, username } = tokens[i];
+        
+        // 添加检查
+        if (!await shouldRun(username, 'heartbeat')) {
+            logger(`Skipping heartbeat for ${username} - Too soon since last run`, 'info');
+            continue;
+        }
+
         const proxy = proxies[i % proxies.length];
         const agent = new HttpsProxyAgent(proxy);
 
@@ -111,7 +183,8 @@ async function sendHeartbeat(API_BASE) {
                 });
 
                 if (response.ok) {
-                    logger(`Heartbeat sent successfully for ${username} using proxy: ${proxy}`, "success");
+                    await saveRunTimes(username, 'heartbeat');
+                    logger(`Heartbeat sent successfully for ${username}`, "success");
                     await fetchPoints(currentToken, username, agent, API_BASE);
                 } else {
                     const errorText = await response.text();
@@ -170,4 +243,9 @@ async function checkForRewards(baseUrl, token) {
     }
 }
 
-module.exports = { sendHeartbeat, checkForRewards };
+module.exports = { 
+    sendHeartbeat, 
+    checkForRewards,
+    shouldRun,
+    saveRunTimes 
+};

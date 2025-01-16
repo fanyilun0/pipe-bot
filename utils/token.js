@@ -3,9 +3,10 @@ const fs = require('fs').promises;
 const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logger } = require('./logger');
 const { headers } = require('./file');
+const { DATA_PATHS, CONFIG_PATHS } = require('../config');
 
-const TOKEN_FILE = 'tokens.json';
-const ACCOUNT_FILE = 'accounts.txt';
+const TOKEN_FILE = DATA_PATHS.TOKENS_FILE;
+const ACCOUNT_FILE = CONFIG_PATHS.ACCOUNTS_FILE;
 
 // 读取账号信息
 async function readAccountCredentials() {

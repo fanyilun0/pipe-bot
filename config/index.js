@@ -14,7 +14,21 @@ const CONFIG_PATHS = {
 // 数据文件路径
 const DATA_PATHS = {
   POINTS_FILE: path.join(DATA_DIR, 'points.json'),
-  TOKENS_FILE: path.join(DATA_DIR, 'tokens.json')
+  TOKENS_FILE: path.join(DATA_DIR, 'tokens.json'),
+  RUNTIME_FILE: path.join(__dirname, 'data', 'runtimes.json'),
+};
+
+// Time intervals
+const BASE_URL_REFRESH_INTERVAL = 24 * 60 * 60 * 1000; // 60 minutes
+const HEARTBEAT_INTERVAL = 6 * 60 * 60 * 1000;    // 6 hours  
+const NODE_TEST_INTERVAL = 30 * 60 * 1000;        // 30 minutes
+const REWARDS_CHECK_INTERVAL = 24 * 60 * 60 * 1000; // 24 hours
+
+const TIME_INTERVALS = {
+  BASE_URL_REFRESH_INTERVAL,
+  HEARTBEAT_INTERVAL,
+  NODE_TEST_INTERVAL,
+  REWARDS_CHECK_INTERVAL
 };
 
 // 确保目录存在
@@ -29,5 +43,6 @@ async function ensureDirectories() {
 module.exports = {
   CONFIG_PATHS,
   DATA_PATHS,
-  ensureDirectories
+  ensureDirectories,
+  TIME_INTERVALS
 };

@@ -58,6 +58,10 @@ async function runNodeTests(API_BASE) {
 
         for (let j = 0; j < tokens.length; j++) {
             const { token, username } = tokens[j];
+            if (!await shouldRun(username, 'nodeTest')) {
+                logger(`Skipping node tests for ${username} - Too soon since last run`, 'info');
+                continue;
+            }
             const proxy = proxies[j % proxies.length];
             const agent = new HttpsProxyAgent(proxy);
 
@@ -136,7 +140,7 @@ async function reportTestResult(node, latency, token, agent, username, API_BASE,
                 const errorText = await response.text();
                 throw { status: response.status, message: errorText };
             }, username, token, API_BASE, agent);
-            
+
             break;
         } catch (error) {
             if (error.status === 504 && i < retries - 1) {

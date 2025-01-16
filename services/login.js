@@ -125,7 +125,8 @@ async function loginWithAllAccounts(API_BASE) {
         total: accounts.length,
         validTokens: 0,
         newLogins: 0,
-        failed: 0
+        failed: 0,
+        failedAccounts: []
     };
 
     for (let i = 0; i < accounts.length; i++) {
@@ -145,6 +146,10 @@ async function loginWithAllAccounts(API_BASE) {
             }
         } else {
             results.failed++;
+            results.failedAccounts.push({
+                email: account.email,
+                error: loginResult.error
+            });
             logger(`Failed to process ${account.email}: ${loginResult.error}`, 'error');
         }
     }
@@ -153,7 +158,10 @@ async function loginWithAllAccounts(API_BASE) {
     - Total accounts: ${results.total}
     - Using existing valid tokens: ${results.validTokens}
     - New successful logins: ${results.newLogins}
-    - Failed attempts: ${results.failed}`, 'info');
+    - Failed attempts: ${results.failed}
+    - Failed accounts:
+      ${results.failedAccounts.map(acc => `
+      * ${acc.email} - Error: ${acc.error}`).join('')}`, 'info');
 }
 
 module.exports = { login, loginWithAllAccounts };

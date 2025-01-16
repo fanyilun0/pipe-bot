@@ -1,6 +1,7 @@
 const { login } = require('../services/login');
 const { readToken, saveToken } = require('./file');
 const { logger } = require('./logger');
+const { readUsersFromFile } = require('../services/login');
 
 // Token refresh function
 async function refreshToken(username, API_BASE, proxy) {
@@ -44,4 +45,33 @@ async function withTokenRefresh(apiCall, username, token, API_BASE, proxy) {
     }
 }
 
-module.exports = { refreshToken, withTokenRefresh }; 
+// 新增：验证token是否有效的函数
+async function verifyToken(token, API_BASE) {
+  try {
+      const response = await fetch(`${API_BASE}/api/points`, {
+          headers: {
+              'Authorization': `Bearer ${token}`,
+              ...headers
+          }
+      });
+      
+      return response.status === 200;
+  } catch (error) {
+      logger('Error verifying token:', 'error', error);
+      return false;
+  }
+}
+
+// 新增：获取已存token的函数
+async function getExistingToken(username) {
+  try {
+      const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
+      const tokens = JSON.parse(fileData);
+      const tokenData = tokens.find(t => t.username === username);
+      return tokenData?.token;
+  } catch (error) {
+      return null;
+  }
+}
+
+module.exports = { refreshToken, withTokenRefresh, verifyToken, getExistingToken }; 

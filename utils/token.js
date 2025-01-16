@@ -1,34 +1,100 @@
-const { login } = require('../services/login');
-const { readToken, saveToken } = require('./file');
+const fetch = require('node-fetch');
+const fs = require('fs').promises;
+const { HttpsProxyAgent } = require('https-proxy-agent');
 const { logger } = require('./logger');
-const { readUsersFromFile } = require('../services/login');
+const { headers } = require('./file');
 
-// Token refresh function
+const TOKEN_FILE = 'tokens.json';
+const ACCOUNT_FILE = 'account.txt';
+
+// 读取账号信息
+async function readAccountCredentials() {
+    try {
+        const fileData = await fs.readFile(ACCOUNT_FILE, 'utf8');
+        return fileData
+            .split('\n')
+            .filter(line => line.trim() !== '')
+            .map(line => {
+                const [email, password] = line.split(':').map(s => s.trim());
+                return { email, password };
+            });
+    } catch (error) {
+        logger('Error reading account credentials:', 'error', error);
+        return [];
+    }
+}
+
+// 验证token
+async function verifyToken(token, API_BASE) {
+    try {
+        const response = await fetch(`${API_BASE}/api/points`, {
+            headers: {
+                'Authorization': `Bearer ${token}`,
+                ...headers
+            }
+        });
+        return response.status === 200;
+    } catch (error) {
+        logger('Error verifying token:', 'error', error);
+        return false;
+    }
+}
+
+// 获取已存token
+async function getExistingToken(username) {
+    try {
+        const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
+        const tokens = JSON.parse(fileData);
+        const tokenData = tokens.find(t => t.username === username);
+        return tokenData?.token;
+    } catch (error) {
+        return null;
+    }
+}
+
+// 直接在token.js中实现token刷新逻辑
 async function refreshToken(username, API_BASE, proxy) {
     try {
-        // Read stored credentials
-        const accounts = await readUsersFromFile();
+        // 获取账号信息
+        const accounts = await readAccountCredentials();
         const account = accounts.find(acc => acc.email === username);
         
         if (!account) {
             throw new Error(`No credentials found for ${username}`);
         }
 
-        // Try to login again
-        await login(account.email, account.password, API_BASE, proxy);
-        logger(`Token refreshed for ${username}`, 'success');
-        
-        // Return the new token
-        const tokens = await readToken();
-        const newToken = tokens.find(t => t.username === username);
-        return newToken?.token;
+        // 直接进行登录请求获取新token
+        const agent = new HttpsProxyAgent(proxy);
+        const response = await fetch(`${API_BASE}/api/login`, {
+            method: 'POST',
+            headers: {
+                ...headers,
+                'content-type': 'application/json'
+            },
+            body: JSON.stringify({
+                email: account.email,
+                password: account.password
+            }),
+            agent
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            if (data.token) {
+                // 保存新token
+                await saveToken({ token: data.token, username });
+                logger(`Token refreshed for ${username}`, 'success');
+                return data.token;
+            }
+        }
+        throw new Error(`Failed to refresh token for ${username}`);
     } catch (error) {
         logger(`Failed to refresh token for ${username}:`, 'error', error);
         throw error;
     }
 }
 
-// Wrapper for API calls that handles token refresh
+// API调用的包装函数
 async function withTokenRefresh(apiCall, username, token, API_BASE, proxy) {
     try {
         return await apiCall(token);
@@ -37,7 +103,6 @@ async function withTokenRefresh(apiCall, username, token, API_BASE, proxy) {
             logger(`Token expired for ${username}, attempting refresh...`);
             const newToken = await refreshToken(username, API_BASE, proxy);
             if (newToken) {
-                // Retry the API call with new token
                 return await apiCall(newToken);
             }
         }
@@ -45,33 +110,9 @@ async function withTokenRefresh(apiCall, username, token, API_BASE, proxy) {
     }
 }
 
-// 新增：验证token是否有效的函数
-async function verifyToken(token, API_BASE) {
-  try {
-      const response = await fetch(`${API_BASE}/api/points`, {
-          headers: {
-              'Authorization': `Bearer ${token}`,
-              ...headers
-          }
-      });
-      
-      return response.status === 200;
-  } catch (error) {
-      logger('Error verifying token:', 'error', error);
-      return false;
-  }
-}
-
-// 新增：获取已存token的函数
-async function getExistingToken(username) {
-  try {
-      const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
-      const tokens = JSON.parse(fileData);
-      const tokenData = tokens.find(t => t.username === username);
-      return tokenData?.token;
-  } catch (error) {
-      return null;
-  }
-}
-
-module.exports = { refreshToken, withTokenRefresh, verifyToken, getExistingToken }; 
+module.exports = {
+    verifyToken,
+    getExistingToken,
+    refreshToken,
+    withTokenRefresh
+}; 

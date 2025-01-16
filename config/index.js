@@ -15,7 +15,7 @@ const CONFIG_PATHS = {
 const DATA_PATHS = {
   POINTS_FILE: path.join(DATA_DIR, 'points.json'),
   TOKENS_FILE: path.join(DATA_DIR, 'tokens.json'),
-  RUNTIME_FILE: path.join(__dirname, 'data', 'runtimes.json'),
+  RUNTIME_FILE: path.join(DATA_DIR, 'runtimes.json'),
 };
 
 // Time intervals

@@ -4,13 +4,19 @@ const { HttpsProxyAgent } = require("https-proxy-agent");
 const { logger } = require("../utils/logger");
 const fs = require('fs');
 
-const ACCOUNT_FILE = 'account.json';
+const ACCOUNT_FILE = 'account.txt';
 
 // Function to read all accounts from account.json
 async function readUsersFromFile() {
     try {
         const fileData = await fs.promises.readFile(ACCOUNT_FILE, 'utf8');
-        return JSON.parse(fileData);
+        return fileData
+            .split('\n')
+            .filter(line => line.trim() !== '')
+            .map(line => {
+                const [email, password] = line.split(':').map(s => s.trim());
+                return { email, password };
+            });
     } catch (error) {
         logger('Error reading users from file', 'error', error);
         return [];

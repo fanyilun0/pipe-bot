@@ -3,6 +3,7 @@ const { readToken, loadProxies, headers } = require("../utils/file");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { logger } = require("../utils/logger");
 const { withTokenRefresh } = require("../utils/token");
+const { shouldRun } = require("../utils/runtime");
 
 
 // Function to fetch the base URL
@@ -75,15 +76,28 @@ async function runNodeTests(API_BASE) {
                 agent,
             });
 
+            if (response.status === 404) {
+                logger("Node list endpoint returned 404. Stopping all tests.", "error");
+                return;
+            }
+
             if (!response.ok) throw new Error(`Failed to fetch nodes with status ${response.status}`);
             const nodes = await response.json();
 
-            for (const node of nodes) {
-                logger(`Testing node ${node.node_id}  (${node.ip}) using proxy: ${proxy}`, "info");
-                const latency = await testNodeLatency(node, agent);
+            try {
+                for (const node of nodes) {
+                    logger(`Testing node ${node.node_id}  (${node.ip}) using proxy: ${proxy}`, "info");
+                    const latency = await testNodeLatency(node, agent);
 
-                logger(`Node ${node.node_id} (${node.ip}) latency: ${latency}ms`, latency > 0 ? "success" : "warn");
-                await reportTestResult(node, latency, token, agent, username, API_BASE);
+                    logger(`Node ${node.node_id} (${node.ip}) latency: ${latency}ms`, latency > 0 ? "success" : "warn");
+                    await reportTestResult(node, latency, token, agent, username, API_BASE);
+                }
+            } catch (error) {
+                if (error.status === 404) {
+                    logger("Received 404 response. Stopping all tests.", "error");
+                    return;
+                }
+                throw error;
             }
         }
 
@@ -126,6 +140,10 @@ async function reportTestResult(node, latency, token, agent, username, API_BASE,
                     agent,
                 });
 
+                if (response.status === 404) {
+                    throw { status: 404, message: "Endpoint not found" };
+                }
+
                 if (response.ok) {
                     logger(`Successfully reported node id:${node.node_id} ip:${node.ip} test result for ${username}`, "success");
                     return;
@@ -143,6 +161,9 @@ async function reportTestResult(node, latency, token, agent, username, API_BASE,
 
             break;
         } catch (error) {
+            if (error.status === 404) {
+                throw error;
+            }
             if (error.status === 504 && i < retries - 1) {
                 continue;
             }

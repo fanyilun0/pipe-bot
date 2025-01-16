@@ -2,36 +2,6 @@ const fs = require("fs").promises;
 const { logger } = require("./logger");
 const { CONFIG_PATHS, DATA_PATHS } = require('../config');
 
-// Function to save the token
-async function saveToken(data) {
-    try {
-        let tokens = [];
-        try {
-            const fileData = await fs.readFile(DATA_PATHS.TOKENS_FILE, 'utf8');
-            tokens = JSON.parse(fileData);
-        } catch (error) {
-            logger("No previous tokens found.", "error");
-        }
-
-        const tokenIndex = tokens.findIndex(token => token.username === data.username);
-
-        if (tokenIndex !== -1) {
-            tokens[tokenIndex] = data;
-            logger(`Token for ${data.username} updated.`);
-        } else {
-            tokens.push(data);
-            logger(`Token for ${data.username} added.`);
-        }
-
-        await fs.writeFile(DATA_PATHS.TOKENS_FILE, JSON.stringify(tokens, null, 2));
-        logger('Token saved successfully!', "success");
-
-    } catch (error) {
-        logger('Error saving token:', "error", error);
-    }
-}
-
-
 // Function to read all saved tokens
 async function readToken() {
     try {
@@ -66,4 +36,4 @@ const headers = {
     "sec-fetch-site": "none",
     "user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
 }
-module.exports = { saveToken, readToken, loadProxies, headers };
+module.exports = { readToken, loadProxies, headers };

@@ -2,6 +2,7 @@ const fetch = require("node-fetch");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { readToken, loadProxies, headers } = require("../utils/file");
 const { logger } = require("../utils/logger");
+const { withTokenRefresh } = require("../utils/token");
 
 // Fetch points for a user
 async function fetchPoints(token, username, agent, API_BASE) {
@@ -46,32 +47,34 @@ async function sendHeartbeat(API_BASE) {
         const agent = new HttpsProxyAgent(proxy);
 
         try {
-            //await checkForRewards(API_BASE, token)
-            const geoInfo = await getGeoLocation(agent);
+            await withTokenRefresh(async (currentToken) => {
+                const geoInfo = await getGeoLocation(agent);
+                logger(`Geo-location data: ${geoInfo.ip}, ${geoInfo.location}`, "info");
+                
+                const response = await fetch(`${API_BASE}/api/heartbeat`, {
+                    method: "POST",
+                    headers: {
+                        ...headers,
+                        "content-type": "application/json",
+                        "authorization": `Bearer ${currentToken}`,
+                    },
+                    body: JSON.stringify({
+                        ip: geoInfo.ip,
+                        location: geoInfo.location,
+                        timestamp: Date.now(),
+                    }),
+                    agent,
+                });
 
-            const response = await fetch(`${API_BASE}/api/heartbeat`, {
-                method: "POST",
-                headers: {
-                    ...headers,
-                    "content-type": "application/json",
-                    "authorization": `Bearer ${token}`,
-                },
-                body: JSON.stringify({
-                    ip: geoInfo.ip,
-                    location: geoInfo.location,
-                    timestamp: Date.now(),
-                }),
-                agent,
-            });
-
-            if (response.ok) {
-                logger(`Heartbeat sent successfully for ${username} using proxy: ${proxy}`, "success");
-                await fetchPoints(token, username, agent, API_BASE);
-            } else {
-                const errorText = await response.text();
-                logger(`Failed to send heartbeat for ${username}: ${errorText}`, "error");
-                await fetchPoints(token, username, agent, API_BASE);
-            }
+                if (response.ok) {
+                    logger(`Heartbeat sent successfully for ${username} using proxy: ${proxy}`, "success");
+                    await fetchPoints(currentToken, username, agent, API_BASE);
+                } else {
+                    const errorText = await response.text();
+                    logger(`Failed to send heartbeat for ${username}: ${errorText}`, "error");
+                    throw { status: response.status, message: errorText };
+                }
+            }, username, token, API_BASE, proxy);
         } catch (error) {
             logger(`Error sending heartbeat for ${username}: ${error.message}`, "error");
         }
@@ -103,7 +106,8 @@ async function checkForRewards(baseUrl, token) {
                 ...headers,
                 "content-type": "application/json",
                 "authorization": `Bearer ${token}`,
-            }, agent,
+            }, 
+            agent,
         });
 
         if (response.ok) {
@@ -117,8 +121,9 @@ async function checkForRewards(baseUrl, token) {
             logger("Failed to fetch rewards data.", 'warn');
         }
     } catch (error) {
-        logger("Error checking for rewards:", 'error');
+        const errorMessage = error.code || error.message.split('\n')[0];
+        logger(`Error checking for rewards: ${errorMessage}`, 'error');
     }
 }
 
-module.exports = { sendHeartbeat };
+module.exports = { sendHeartbeat, checkForRewards };

@@ -2,6 +2,7 @@ const fetch = require("node-fetch");
 const { readToken, loadProxies, headers } = require("../utils/file");
 const { HttpsProxyAgent } = require("https-proxy-agent");
 const { logger } = require("../utils/logger");
+const { withTokenRefresh } = require("../utils/token");
 
 
 // Function to fetch the base URL
@@ -74,7 +75,7 @@ async function runNodeTests(API_BASE) {
             const nodes = await response.json();
 
             for (const node of nodes) {
-                logger(`Testing node ${node.node_id} using proxy: ${proxy}`, "info");
+                logger(`Testing node ${node.node_id}  (${node.ip}) using proxy: ${proxy}`, "info");
                 const latency = await testNodeLatency(node, agent);
 
                 logger(`Node ${node.node_id} (${node.ip}) latency: ${latency}ms`, latency > 0 ? "success" : "warn");
@@ -106,37 +107,46 @@ async function testNodeLatency(node, agent) {
 }
 
 // Function to report test result
-async function reportTestResult(node, latency, token, agent, username, API_BASE) {
-    if (!token) {
-        logger("No token found. Skipping result reporting.", "warn");
-        return;
-    }
+async function reportTestResult(node, latency, token, agent, username, API_BASE, retries = 3) {
+    for (let i = 0; i < retries; i++) {
+        try {
+            await withTokenRefresh(async (currentToken) => {
+                const response = await fetch(`${API_BASE}/api/nodes/${node.node_id}/test`, {
+                    method: "POST",
+                    headers: {
+                        ...headers,
+                        "authorization": `Bearer ${currentToken}`,
+                        "content-type": "application/json",
+                    },
+                    body: JSON.stringify({ latency }),
+                    agent,
+                });
 
-    try {
-        const response = await fetch(`${API_BASE}/api/test`, {
-            method: "POST",
-            headers: {
-                ...headers,
-                "Content-Type": "application/json",
-                Authorization: `Bearer ${token}`
-            },
-            body: JSON.stringify({
-                node_id: node.node_id,
-                ip: node.ip,
-                latency: latency,
-                status: latency > 0 ? "online" : "offline"
-            }),
-            agent,
-        });
+                if (response.ok) {
+                    logger(`Successfully reported node id:${node.node_id} ip:${node.ip} test result for ${username}`, "success");
+                    return;
+                }
 
-        if (response.ok) {
-            logger(`Reported result for node ID: ${node.node_id} for ${username}`, "success");
-        } else {
-            const errorText = await response.text();
-            logger(`Failed to report node ${node.node_id} for ${username}: ${errorText}`, "error");
+                if (response.status === 504) {
+                    logger(`Gateway timeout when reporting node id:${node.node_id} ip:${node.ip}, attempt ${i + 1}/${retries}`, "warn");
+                    await new Promise(resolve => setTimeout(resolve, Math.pow(2, i) * 1000));
+                    throw { status: 504 };
+                }
+
+                const errorText = await response.text();
+                throw { status: response.status, message: errorText };
+            }, username, token, API_BASE, agent);
+            
+            break;
+        } catch (error) {
+            if (error.status === 504 && i < retries - 1) {
+                continue;
+            }
+            if (i === retries - 1) {
+                const errorMessage = error.code || error.message || `Status ${error.status}`;
+                logger(`Failed to report node id:${node.node_id} ip:${node.ip} for ${username}: ${errorMessage}`, "error");
+            }
         }
-    } catch (error) {
-        logger(`Error reporting node ${node.node_id} for ${username}: ${error.message}`, "error");
     }
 }
 

@@ -20,7 +20,7 @@ async function registerUser(email, password, proxy, API_URL) {
             body: JSON.stringify({
                 email: email,
                 password: password,
-                referralCode: "bml1YWdyb0",
+                referralCode: "aWdzeWYwK3",
             }),
             agent,
         });

@@ -6,7 +6,7 @@ const { headers } = require('./file');
 const { DATA_PATHS, CONFIG_PATHS } = require('../config');
 
 const TOKEN_FILE = DATA_PATHS.TOKENS_FILE;
-const ACCOUNT_FILE = CONFIG_PATHS.ACCOUNTS_FILE;
+const ACCOUNT_FILE = CONFIG_PATHS.ACCOUNT_FILE;
 
 
 // Helper function to add delay
@@ -14,56 +14,51 @@ const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Function to save the token with retry mechanism
 async function saveToken(data, retries = 3, backoff = 1000) {
+  logger(`开始保存token - 用户: ${data.username}`, 'info');
+  
   for (let i = 0; i < retries; i++) {
     try {
-      // Create a temporary file for atomic write
-      const tempFile = `${DATA_PATHS.TOKENS_FILE}.tmp`;
-
+      const tempFile = `${TOKEN_FILE}.tmp`;
+      
       let tokens = [];
       try {
-        const fileData = await fs.readFile(DATA_PATHS.TOKENS_FILE, 'utf8');
+        logger(`读取现有tokens文件: ${TOKEN_FILE}`, 'info');
+        const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
         tokens = JSON.parse(fileData);
+        logger(`成功读取${tokens.length}个现有token`, 'info');
       } catch (error) {
-        logger("No previous tokens found, creating new file.", "info");
+        logger(`读取tokens文件失败: ${error.message}`, 'warn');
       }
 
       const tokenIndex = tokens.findIndex(token => token.username === data.username);
-
+      
       if (tokenIndex !== -1) {
         tokens[tokenIndex] = data;
-        logger(`Token for ${data.username} updated.`);
+        logger(`更新用户${data.username}的token`, 'info');
       } else {
         tokens.push(data);
-        logger(`Token for ${data.username} added.`);
+        logger(`添加用户${data.username}的新token`, 'info');
       }
 
-      // Write to temporary file first
+      logger(`写入临时文件: ${tempFile}`, 'info');
       await fs.writeFile(tempFile, JSON.stringify(tokens, null, 2));
 
-      // Atomically rename temp file to actual file
       try {
-        await fs.rename(tempFile, DATA_PATHS.TOKENS_FILE);
-        logger('Token saved successfully!', "success");
-        return; // Success - exit the retry loop
+        logger(`重命名临时文件到: ${TOKEN_FILE}`, 'info');
+        await fs.rename(tempFile, TOKEN_FILE);
+        logger(`Token保存成功! 当前共有${tokens.length}个token`, 'success');
+        return;
       } catch (renameError) {
-        // If rename fails, try to clean up temp file
-        try {
-          await fs.unlink(tempFile);
-        } catch (unlinkError) {
-          // Ignore unlink errors
-        }
+        logger(`重命名失败: ${renameError.message}`, 'error');
         throw renameError;
       }
-
     } catch (error) {
       if (i === retries - 1) {
-        // Last retry failed
-        logger('Error saving token:', "error", error);
+        logger(`Token保存最终失败: ${error.message}`, 'error');
         throw error;
       }
-      // Wait before retrying with exponential backoff
+      logger(`重试保存token (${i + 2}/${retries})`, 'warn');
       await delay(backoff * Math.pow(2, i));
-      logger(`Retrying token save for ${data.username} (attempt ${i + 2}/${retries})`, "info");
     }
   }
 }
@@ -71,17 +66,30 @@ async function saveToken(data, retries = 3, backoff = 1000) {
 // 读取账号信息
 async function readAccountCredentials() {
   try {
+    if (!ACCOUNT_FILE) {
+      throw new Error('Account file path is not defined');
+    }
+    
+    logger(`Reading accounts from: ${ACCOUNT_FILE}`, 'info');
     const fileData = await fs.readFile(ACCOUNT_FILE, 'utf8');
-    return fileData
+    
+    if (!fileData) {
+      throw new Error('Account file is empty');
+    }
+    
+    const accounts = fileData
       .split('\n')
       .filter(line => line.trim() !== '')
       .map(line => {
         const [email, password] = line.split(':').map(s => s.trim());
         return { email, password };
       });
+      
+    logger(`Successfully read ${accounts.length} accounts`, 'info');
+    return accounts;
   } catch (error) {
-    logger('Error reading account credentials:', 'error', error);
-    return [];
+    logger(`Error reading account credentials: ${error.message}`, 'error');
+    throw new Error(`Failed to read account credentials: ${error.message}`);
   }
 }
 
@@ -104,11 +112,19 @@ async function verifyToken(token, API_BASE) {
 // 获取已存token
 async function getExistingToken(username) {
   try {
+    logger(`尝试获取${username}的token`, 'info');
     const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
     const tokens = JSON.parse(fileData);
+    logger(`当前共有${tokens.length}个token记录`, 'info');
     const tokenData = tokens.find(t => t.username === username);
+    if(tokenData) {
+      logger(`找到${username}的token`, 'info');
+    } else {
+      logger(`未找到${username}的token`, 'info');
+    }
     return tokenData?.token;
   } catch (error) {
+    logger(`读取token失败: ${error.message}`, 'warn');
     return null;
   }
 }
@@ -175,5 +191,6 @@ module.exports = {
   verifyToken,
   getExistingToken,
   refreshToken,
-  withTokenRefresh
+  withTokenRefresh,
+  saveToken
 }; 

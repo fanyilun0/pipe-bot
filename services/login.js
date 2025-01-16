@@ -26,6 +26,29 @@ async function readUsersFromFile() {
     }
 }
 
+// 添加简单的文件锁机制
+let isWriting = false;
+const writeQueue = [];
+
+async function writeWithLock(operation) {
+    if (isWriting) {
+        // 如果正在写入,将操作加入队列
+        await new Promise(resolve => writeQueue.push(resolve));
+    }
+    
+    isWriting = true;
+    try {
+        await operation();
+    } finally {
+        isWriting = false;
+        if (writeQueue.length > 0) {
+            // 处理队列中的下一个写入操作
+            const next = writeQueue.shift();
+            next();
+        }
+    }
+}
+
 // 修改：登录函数，增加详细日志
 async function login(email, password, API_BASE, proxy) {
     try {
@@ -72,7 +95,11 @@ async function login(email, password, API_BASE, proxy) {
             const data = await response.json();
             if (data.token) {
                 logger(`New token received for ${email}`, 'info');
-                await saveToken({ token: data.token, username: email });
+                // 使用写入锁保存token
+                await writeWithLock(async () => {
+                    logger(`Saving token for ${email}...`, 'info');
+                    await saveToken({ token: data.token, username: email });
+                });
                 logger(`New login successful for ${email}!`, 'success');
                 return {
                     success: true,
@@ -129,20 +156,22 @@ async function loginWithAllAccounts(API_BASE) {
         failedAccounts: []
     };
 
+    logger(`开始处理账号，共${accounts.length}个`, 'info');
+    
     for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
         const proxy = proxies[i % proxies.length];
         
-        logger(`Processing account ${i + 1}/${accounts.length}: ${account.email}`, 'info');
+        logger(`处理第${i + 1}个账号: ${account.email}`, 'info');
         const loginResult = await login(account.email, account.password, API_BASE, proxy);
 
         if (loginResult.success) {
             if (loginResult.isNewLogin) {
                 results.newLogins++;
-                logger(`New login successful for ${account.email}`, 'success');
+                logger(`${account.email} 新登录成功，当前新登录数: ${results.newLogins}`, 'success');
             } else {
                 results.validTokens++;
-                logger(`Using existing valid token for ${account.email}`, 'success');
+                logger(`${account.email} 使用现有token，当前有效token数: ${results.validTokens}`, 'success');
             }
         } else {
             results.failed++;
@@ -150,8 +179,15 @@ async function loginWithAllAccounts(API_BASE) {
                 email: account.email,
                 error: loginResult.error
             });
-            logger(`Failed to process ${account.email}: ${loginResult.error}`, 'error');
+            logger(`${account.email} 处理失败，当前失败数: ${results.failed}`, 'error');
         }
+        
+        // 每次循环都输出当前统计
+        logger(`当前统计:
+        - 总账号数: ${results.total}
+        - 有效token数: ${results.validTokens}
+        - 新登录数: ${results.newLogins}
+        - 失败数: ${results.failed}`, 'info');
     }
 
     logger(`Login process completed:

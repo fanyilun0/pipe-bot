@@ -4,7 +4,10 @@ const { readToken, loadProxies, headers } = require("../utils/file");
 const { logger } = require("../utils/logger");
 const { withTokenRefresh } = require("../utils/token");
 const fs = require('fs').promises;
-const { DATA_PATHS, HEARTBEAT_INTERVAL, NODE_TEST_INTERVAL } = require('../config');
+const { DATA_PATHS, TIME_INTERVALS } = require('../config');
+
+const HEARTBEAT_INTERVAL = TIME_INTERVALS.HEARTBEAT_INTERVAL;
+const NODE_TEST_INTERVAL = TIME_INTERVALS.NODE_TEST_INTERVAL;
 
 // 新增：保存points到本地文件
 async function savePoints(username, points, timestamp = Date.now()) {
@@ -74,25 +77,33 @@ async function fetchPoints(token, username, agent, API_BASE) {
 // 保存运行时间记录
 async function saveRunTimes(username, type, timestamp = Date.now()) {
     try {
+        logger(`开始保存运行时间 - ${username} - ${type}`, 'info');
+        
+        // 读取现有数据
         let timeData = [];
         try {
             const fileData = await fs.readFile(DATA_PATHS.RUNTIME_FILE, 'utf8');
             timeData = JSON.parse(fileData);
         } catch (error) {
+            logger(`读取运行时间文件失败: ${error.message}, 将创建新文件`, 'warn');
             timeData = [];
         }
 
-        const existingIndex = timeData.findIndex(p => p.username === username);
+        // 计算时间
         const nextRun = type === 'heartbeat' ? 
             timestamp + HEARTBEAT_INTERVAL :
             timestamp + NODE_TEST_INTERVAL;
 
-        const timeRecord = existingIndex >= 0 ? timeData[existingIndex] : {
+        // 更新记录
+        const existingIndex = timeData.findIndex(p => p.username === username);
+        const timeRecord = {
             username,
-            lastHeartbeat: null,
-            nextHeartbeat: null,
-            lastNodeTest: null,
-            nextNodeTest: null
+            ...(existingIndex >= 0 ? timeData[existingIndex] : {
+                lastHeartbeat: null,
+                nextHeartbeat: null,
+                lastNodeTest: null,
+                nextNodeTest: null
+            })
         };
 
         if (type === 'heartbeat') {
@@ -103,40 +114,75 @@ async function saveRunTimes(username, type, timestamp = Date.now()) {
             timeRecord.nextNodeTest = nextRun;
         }
 
+        // 更新数组
         if (existingIndex >= 0) {
             timeData[existingIndex] = timeRecord;
         } else {
             timeData.push(timeRecord);
         }
 
-        await fs.writeFile(DATA_PATHS.RUNTIME_FILE, JSON.stringify(timeData, null, 2));
-        logger(`Runtime saved for ${username} - ${type}`, 'info');
+        // 保存数据
+        const recordToSave = JSON.stringify(timeData, null, 2);
+        await fs.writeFile(DATA_PATHS.RUNTIME_FILE, recordToSave, 'utf8');
+
+        logger(`成功保存运行时间 - ${username}:
+        - 类型: ${type}
+        - 当前时间戳: ${timestamp}
+        - 下次运行时间戳: ${nextRun}`, 'success');
+
     } catch (error) {
-        logger(`Error saving runtime for ${username}: ${error.message}`, 'error');
+        logger(`保存运行时间失败 - ${username}: ${error.message}`, 'error');
+        logger(`错误堆栈: ${error.stack}`, 'debug');
+        throw error;
     }
 }
 
 // 检查是否需要运行
 async function shouldRun(username, type) {
     try {
+        logger(`检查${username}是否需要运行${type}`, 'info');
+        
         const fileData = await fs.readFile(DATA_PATHS.RUNTIME_FILE, 'utf8');
         const timeData = JSON.parse(fileData);
+        logger(`成功读取运行时间记录，共${timeData.length}条记录`, 'info');
         
         const record = timeData.find(p => p.username === username);
-        if (!record) return true;
+        if (!record) {
+            logger(`未找到${username}的运行记录，允许运行`, 'info');
+            return true;
+        }
 
         const now = Date.now();
         if (type === 'heartbeat') {
-            return !record.nextHeartbeat || now >= record.nextHeartbeat;
+            const shouldExecute = !record.nextHeartbeat || now >= record.nextHeartbeat;
+            const timeLeft = record.nextHeartbeat ? Math.max(0, record.nextHeartbeat - now) : 0;
+            
+            logger(`${username}的心跳检查:
+            - 当前时间戳: ${now}
+            - 下次运行时间戳: ${record.nextHeartbeat || 'null'}
+            - 剩余时间: ${Math.floor(timeLeft / 1000)}秒
+            - 是否运行: ${shouldExecute ? '是' : '否'}`, 'info');
+            
+            return shouldExecute;
         } else {
-            return !record.nextNodeTest || now >= record.nextNodeTest;
+            const shouldExecute = !record.nextNodeTest || now >= record.nextNodeTest;
+            const timeLeft = record.nextNodeTest ? Math.max(0, record.nextNodeTest - now) : 0;
+            
+            logger(`${username}的节点测试检查:
+            - 当前时间戳: ${now}
+            - 下次运行时间戳: ${record.nextNodeTest || 'null'}
+            - 剩余时间: ${Math.floor(timeLeft / 1000)}秒
+            - 是否运行: ${shouldExecute ? '是' : '否'}`, 'info');
+            
+            return shouldExecute;
         }
     } catch (error) {
-        return true; // 如果文件不存在或出错,默认允许运行
+        logger(`检查${username}运行时间时出错: ${error.message}，默认允许运行`, 'warn');
+        return true;
     }
 }
 
-// Function to send heartbeat
+// 修改 sendHeartbeat 函数，在成功时保存运行时间
 async function sendHeartbeat(API_BASE) {
     const proxies = await loadProxies();
     if (proxies.length === 0) {

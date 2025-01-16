@@ -5,7 +5,7 @@ const { logger } = require('./logger');
 const { headers } = require('./file');
 
 const TOKEN_FILE = 'tokens.json';
-const ACCOUNT_FILE = 'account.txt';
+const ACCOUNT_FILE = 'accounts.txt';
 
 // 读取账号信息
 async function readAccountCredentials() {

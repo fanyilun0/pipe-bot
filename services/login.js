@@ -4,13 +4,15 @@ const { HttpsProxyAgent } = require("https-proxy-agent");
 const { logger } = require("../utils/logger");
 const fs = require('fs');
 const { verifyToken, getExistingToken } = require("../utils/token");
+const { CONFIG_PATHS } = require('../config');
 
-const ACCOUNT_FILE = 'account.txt';
+// Add delay utility function at the top
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 
 // Function to read all accounts from account.json
 async function readUsersFromFile() {
     try {
-        const fileData = await fs.promises.readFile(ACCOUNT_FILE, 'utf8');
+        const fileData = await fs.promises.readFile(CONFIG_PATHS.ACCOUNT_FILE, 'utf8');
         return fileData
             .split('\n')
             .filter(line => line.trim() !== '')
@@ -47,6 +49,11 @@ async function login(email, password, API_BASE, proxy) {
         } else {
             logger(`No existing token found for ${email}, proceeding with new login`, 'info');
         }
+
+        // Add random delay before login request
+        const delayMs = Math.floor(Math.random() * 4000) + 1000; // 1-5 seconds
+        logger(`Adding ${delayMs}ms delay before login request for ${email}...`, 'info');
+        await delay(delayMs);
 
         // 执行新登录
         logger(`Attempting new login for ${email}...`, 'info');

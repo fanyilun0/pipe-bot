@@ -4,15 +4,14 @@ const { readToken, loadProxies, headers } = require("../utils/file");
 const { logger } = require("../utils/logger");
 const { withTokenRefresh } = require("../utils/token");
 const fs = require('fs').promises;
-
-const POINTS_FILE = 'points.json';
+const { DATA_PATHS } = require('../config');
 
 // 新增：保存points到本地文件
 async function savePoints(username, points, timestamp = Date.now()) {
     try {
         let pointsData = [];
         try {
-            const fileData = await fs.readFile(POINTS_FILE, 'utf8');
+            const fileData = await fs.readFile(DATA_PATHS.POINTS_FILE, 'utf8');
             pointsData = JSON.parse(fileData);
         } catch (error) {
             // 如果文件不存在或解析失败，使用空数组
@@ -35,7 +34,7 @@ async function savePoints(username, points, timestamp = Date.now()) {
         }
 
         // 保存到文件
-        await fs.writeFile(POINTS_FILE, JSON.stringify(pointsData, null, 2));
+        await fs.writeFile(DATA_PATHS.POINTS_FILE, JSON.stringify(pointsData, null, 2));
         logger(`Points saved for ${username}: ${points}`, 'info');
     } catch (error) {
         logger(`Error saving points for ${username}: ${error.message}`, 'error');

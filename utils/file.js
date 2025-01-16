@@ -1,13 +1,13 @@
 const fs = require("fs").promises;
 const { logger } = require("./logger");
-const TOKEN_FILE = "tokenz.json";
+const { CONFIG_PATHS, DATA_PATHS } = require('../config');
 
 // Function to save the token
 async function saveToken(data) {
     try {
         let tokens = [];
         try {
-            const fileData = await fs.readFile(TOKEN_FILE, 'utf8');
+            const fileData = await fs.readFile(DATA_PATHS.TOKENS_FILE, 'utf8');
             tokens = JSON.parse(fileData);
         } catch (error) {
             logger("No previous tokens found.", "error");
@@ -23,7 +23,7 @@ async function saveToken(data) {
             logger(`Token for ${data.username} added.`);
         }
 
-        await fs.writeFile(TOKEN_FILE, JSON.stringify(tokens, null, 2));
+        await fs.writeFile(DATA_PATHS.TOKENS_FILE, JSON.stringify(tokens, null, 2));
         logger('Token saved successfully!', "success");
 
     } catch (error) {
@@ -35,7 +35,7 @@ async function saveToken(data) {
 // Function to read all saved tokens
 async function readToken() {
     try {
-        const data = await fs.readFile(TOKEN_FILE, "utf8");
+        const data = await fs.readFile(DATA_PATHS.TOKENS_FILE, "utf8");
         return JSON.parse(data);
     } catch {
         logger("No tokens found. Please login first.", "error");
@@ -45,7 +45,7 @@ async function readToken() {
 
 async function loadProxies() {
     try {
-        const data = await fs.readFile('proxy.txt', 'utf8');
+        const data = await fs.readFile(DATA_PATHS.PROXY_FILE, 'utf8');
         return data.split('\n').filter(proxy => proxy.trim() !== '');
     } catch (error) {
         logger('Error reading proxy file:', "error", error);

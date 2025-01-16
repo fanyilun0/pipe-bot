@@ -5,6 +5,7 @@ const { runNodeTests, fetchBaseUrl } = require("./services/nodes");
 const { askQuestion } = require("./utils/userInput");
 const { banner } = require("./utils/banner");
 const { logger } = require("./utils/logger");
+const { ensureDirectories } = require('./config');
 
 // Time intervals
 const BASE_URL_REFRESH_INTERVAL = 60 * 60 * 1000; // 60 minutes
@@ -65,7 +66,7 @@ async function showMenu() {
 
 (async () => {
     logger(banner, "debug");
-
+    await ensureDirectories();
     // Refresh the base URL periodically
     setInterval(async () => {
         baseUrl = await fetchBaseUrl();

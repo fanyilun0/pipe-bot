@@ -1,0 +1,33 @@
+const path = require('path');
+const fs = require('fs').promises;
+
+// 基础路径
+const CONFIG_DIR = path.join(__dirname); // config目录
+const DATA_DIR = path.join(__dirname, '..', 'data'); // data目录
+
+// 配置文件路径
+const CONFIG_PATHS = {
+  ACCOUNT_FILE: path.join(CONFIG_DIR, 'accounts.txt'),
+  PROXY_FILE: path.join(CONFIG_DIR, 'proxy.txt')
+};
+
+// 数据文件路径
+const DATA_PATHS = {
+  POINTS_FILE: path.join(DATA_DIR, 'points.json'),
+  TOKENS_FILE: path.join(DATA_DIR, 'tokens.json')
+};
+
+// 确保目录存在
+async function ensureDirectories() {
+  try {
+    await fs.mkdir(DATA_DIR, { recursive: true });
+  } catch (error) {
+    console.error('Error creating directories:', error);
+  }
+}
+
+module.exports = {
+  CONFIG_PATHS,
+  DATA_PATHS,
+  ensureDirectories
+};

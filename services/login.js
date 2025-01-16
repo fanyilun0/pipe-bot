@@ -24,22 +24,32 @@ async function readUsersFromFile() {
     }
 }
 
-// 修改：登录函数增加token验证
+// 修改：登录函数，增加详细日志
 async function login(email, password, API_BASE, proxy) {
     try {
-        // 先检查是否有现有token
+        // 检查现有token
+        logger(`Checking existing token for ${email}...`, 'info');
         const existingToken = await getExistingToken(email);
+        
         if (existingToken) {
-            // 验证现有token
+            logger(`Found existing token for ${email}, verifying...`, 'info');
             const isValid = await verifyToken(existingToken, API_BASE);
+            
             if (isValid) {
-                logger(`Existing token for ${email} is valid, skipping login`, 'success');
-                return true;
+                logger(`Existing token for ${email} is valid, using it`, 'success');
+                return {
+                    success: true,
+                    token: existingToken,
+                    isNewLogin: false
+                };
             }
-            logger(`Existing token for ${email} is invalid, proceeding with login`, 'info');
+            logger(`Existing token for ${email} is invalid, proceeding with new login`, 'warn');
+        } else {
+            logger(`No existing token found for ${email}, proceeding with new login`, 'info');
         }
 
-        // 现有token无效或不存在，进行登录
+        // 执行新登录
+        logger(`Attempting new login for ${email}...`, 'info');
         const agent = new HttpsProxyAgent(proxy);
         const response = await fetch(`${API_BASE}/api/login`, {
             method: "POST",
@@ -54,79 +64,89 @@ async function login(email, password, API_BASE, proxy) {
         if (response.ok) {
             const data = await response.json();
             if (data.token) {
+                logger(`New token received for ${email}`, 'info');
                 await saveToken({ token: data.token, username: email });
-                logger(`Login successful for ${email}!`, 'success');
-                return true;
-            } else {
-                logger(`Login failed for ${email}! No token returned.`, 'error');
-                return false;
+                logger(`New login successful for ${email}!`, 'success');
+                return {
+                    success: true,
+                    token: data.token,
+                    isNewLogin: true
+                };
             }
-        } else if (response.status === 401) {
-            logger(`Invalid credentials for ${email}. Please check your email and password.`, 'error');
-            return false;
-        } else {
-            const errorText = await response.text();
-            logger(`Login error for ${email}: ${errorText}`, 'error');
-            return false;
+            logger(`Login failed for ${email}: No token returned`, 'error');
+            return {
+                success: false,
+                error: 'No token returned'
+            };
         }
+
+        const errorText = await response.text();
+        logger(`Login failed for ${email}: ${errorText}`, 'error');
+        return {
+            success: false,
+            error: errorText
+        };
+
     } catch (error) {
-        logger(`Error logging in with ${email}:`, 'error', error);
-        return false;
+        logger(`Error during login process for ${email}:`, 'error', error);
+        return {
+            success: false,
+            error: error.message
+        };
     }
 }
 
-// Login function with proxy and added headers
-// async function login(email, password, API_BASE, proxy) {
-//     try {
-//         const agent = new HttpsProxyAgent(proxy);
-
-//         const response = await fetch(`${API_BASE}/api/login`, {
-//             method: "POST",
-//             headers: {
-//                 ...headers,
-//                 "content-type": "application/json",
-//             },
-//             body: JSON.stringify({ email, password }),
-//             agent,
-//         });
-
-//         if (response.ok) {
-//             const data = await response.json();
-//             if (data.token) {
-//                 await saveToken({ token: data.token, username: email });
-//                 logger(`Login successful for ${email}!`, 'success');
-//             } else {
-//                 logger(`Login failed for ${email}! No token returned.`, 'error');
-//             }
-//         } else if (response.status === 401) {
-//             logger(`Invalid credentials for ${email}. Please check your email and password.`, 'error');
-//         } else {
-//             const errorText = await response.text();
-//             logger(`Login error for ${email}: ${errorText}`, 'error');
-//         }
-//     } catch (error) {
-//         logger(`Error logging in with ${email}:`, 'error', error);
-//     }
-// }
-
-// Function to login with all accounts and use proxies
+// 修改：处理所有账号的登录，增加详细日志
 async function loginWithAllAccounts(API_BASE) {
+    logger('Starting login process for all accounts...', 'info');
+    
     const proxies = await loadProxies();
-    const accounts = await readUsersFromFile();
-
     if (proxies.length === 0) {
         logger("No proxies available. Please check your proxy.txt file.", "error");
         return;
     }
+    logger(`Loaded ${proxies.length} proxies`, 'info');
+
+    const accounts = await readUsersFromFile();
+    if (accounts.length === 0) {
+        logger("No accounts found. Please check your accounts.txt file.", "error");
+        return;
+    }
+    logger(`Found ${accounts.length} accounts to process`, 'info');
+
+    const results = {
+        total: accounts.length,
+        validTokens: 0,
+        newLogins: 0,
+        failed: 0
+    };
 
     for (let i = 0; i < accounts.length; i++) {
         const account = accounts[i];
         const proxy = proxies[i % proxies.length];
-        logger(`Attempting to login with ${account.email} using proxy ${proxy}`);
-        await login(account.email, account.password, API_BASE, proxy);
+        
+        logger(`Processing account ${i + 1}/${accounts.length}: ${account.email}`, 'info');
+        const loginResult = await login(account.email, account.password, API_BASE, proxy);
+
+        if (loginResult.success) {
+            if (loginResult.isNewLogin) {
+                results.newLogins++;
+                logger(`New login successful for ${account.email}`, 'success');
+            } else {
+                results.validTokens++;
+                logger(`Using existing valid token for ${account.email}`, 'success');
+            }
+        } else {
+            results.failed++;
+            logger(`Failed to process ${account.email}: ${loginResult.error}`, 'error');
+        }
     }
-    logger('All accounts logged in successfully!');
-    return;
+
+    logger(`Login process completed:
+    - Total accounts: ${results.total}
+    - Using existing valid tokens: ${results.validTokens}
+    - New successful logins: ${results.newLogins}
+    - Failed attempts: ${results.failed}`, 'info');
 }
 
-module.exports = { loginWithAllAccounts, readUsersFromFile };
+module.exports = { login, loginWithAllAccounts };

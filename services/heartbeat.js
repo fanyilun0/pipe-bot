@@ -3,6 +3,44 @@ const { HttpsProxyAgent } = require("https-proxy-agent");
 const { readToken, loadProxies, headers } = require("../utils/file");
 const { logger } = require("../utils/logger");
 const { withTokenRefresh } = require("../utils/token");
+const fs = require('fs').promises;
+
+const POINTS_FILE = 'points.json';
+
+// 新增：保存points到本地文件
+async function savePoints(username, points, timestamp = Date.now()) {
+    try {
+        let pointsData = [];
+        try {
+            const fileData = await fs.readFile(POINTS_FILE, 'utf8');
+            pointsData = JSON.parse(fileData);
+        } catch (error) {
+            // 如果文件不存在或解析失败，使用空数组
+            pointsData = [];
+        }
+
+        // 更新或添加新的points记录
+        const existingIndex = pointsData.findIndex(p => p.username === username);
+        const pointsRecord = {
+            username,
+            points,
+            timestamp,
+            lastUpdated: new Date().toISOString()
+        };
+
+        if (existingIndex >= 0) {
+            pointsData[existingIndex] = pointsRecord;
+        } else {
+            pointsData.push(pointsRecord);
+        }
+
+        // 保存到文件
+        await fs.writeFile(POINTS_FILE, JSON.stringify(pointsData, null, 2));
+        logger(`Points saved for ${username}: ${points}`, 'info');
+    } catch (error) {
+        logger(`Error saving points for ${username}: ${error.message}`, 'error');
+    }
+}
 
 // Fetch points for a user
 async function fetchPoints(token, username, agent, API_BASE) {
@@ -19,11 +57,18 @@ async function fetchPoints(token, username, agent, API_BASE) {
         if (response.ok) {
             const data = await response.json();
             logger(`Current Points for ${username}: ${data.points}`, "info");
+            
+            // 保存points到本地
+            await savePoints(username, data.points);
+            
+            return data.points;
         } else {
             logger(`Failed to fetch points for ${username}: Status ${response.status}`, "error");
+            return null;
         }
     } catch (error) {
         logger(`Error fetching points for ${username}: ${error.message}`, "error");
+        return null;
     }
 }
 
